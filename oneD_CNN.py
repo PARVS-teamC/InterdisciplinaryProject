@@ -4,6 +4,7 @@ import keras
 from keras.models import Sequential
 from keras import layers
 from matplotlib import pyplot as plt
+import os
 
 def moving_zscore(df, window_size):
     df_norm = df.copy()
@@ -37,9 +38,124 @@ def get_index(df,col_name_list):
 
 window_size = 8640
 window_seg = 288
-#sensor_list=['n1','n4','n31']
-#DMA7
-sensor_list=['n188','n163','n613']
+sensor_list1=['n1','n4','n31']
+sensor_list2=['n410', 'n54', 'n429']
+sensor_list3=['n644','n636','n342']
+sensor_list7=['n188','n163','n613']
+sensor_list4=['n296', 'n740', 'n722', 'n679' ]
+sensor_list=sensor_list4
+df = pd.read_csv('InterdisciplinaryProject/Data/2019_SCADA_Pressures.csv', sep=';')
+indexes= get_index(df, sensor_list)
+for column in df.columns[1:]:
+    df[column] = pd.to_numeric(df[column].str.replace(',', '.'))
+df_test = df.iloc[4034:, indexes]
+df_train = df.iloc[:4033, indexes]
+df_test_value= zscore(df_test,df_train)
+
+
+x_test = segmentation(df_test_value, window_seg)
+x_test = np.array(x_test)
+
+# Load anomalies data from CSV file
+anomalies_df = pd.read_csv('anomalies.csv')
+print(anomalies_df.head)
+
+anomalies = anomalies_df.to_numpy()
+print('aaaaaaaaa',anomalies)
+
+
+#anomalies_tot= test_mae_loss_tot > threshold
+anomalies_tot= np.any(anomalies, axis=1)
+
+
+print("Number of anomaly samples: ", np.sum(anomalies_tot))
+print("Indices of anomaly samples: ", np.where(anomalies_tot))
+
+# Assuming anomalies is a 2D NumPy array
+for i in range(anomalies.shape[1]):
+    column_anomalies = anomalies[:, i]
+    num_anomalies = np.sum(column_anomalies)
+    anomaly_indices = np.where(column_anomalies)[0]
+    print(f"Number of anomaly samples in column {i}: {num_anomalies}")
+    print(f"Indices of anomaly samples in column {i}: {anomaly_indices}")
+
+
+anomaly_indices_per_column = {}
+
+
+for column in range(len(anomalies[0])):
+    anomaly_indices_per_column[column] = []
+    for data_idx in range(window_seg - 1, len(df_test_value) - window_seg + 1):
+        if anomalies[data_idx, column]:
+            anomaly_indices_per_column[column].append(data_idx)
+
+# Select subset of data containing only anomalous samples for each column
+df_subset_per_column = {}
+for column, indices in anomaly_indices_per_column.items():
+    df_subset_per_column[column] = df_test_value.iloc[indices]
+    
+
+# Plot the original data and the subset of anomalous data for each column
+fig, axes = plt.subplots(len(df_test_value.columns), 1, figsize=(10, 5 * len(df_test_value.columns)), sharex=True)
+for i, column_name in enumerate(df_test_value.columns):
+    ax = axes[i]
+    df_test_value[column_name].plot(legend=False, ax=ax)
+    df_subset_per_column[i][column_name].plot(legend=False, ax=ax, color="r")
+    ax.set_title(f"Column: {column_name}")
+plt.show()
+
+#for the plor containing data about all sensor in the dma
+anomalous_data_indices_tot = []
+for data_idx in range(window_seg - 1, len(df_test_value) - window_seg + 1):
+    if np.all(anomalies_tot[data_idx - window_seg + 1 : data_idx]):
+        anomalous_data_indices_tot.append(data_idx)
+
+        
+df_subset = df_test.iloc[anomalous_data_indices_tot]
+fig, ax = plt.subplots(figsize=(10, 6))  # Adjust the figsize as per your requirement
+df_test.plot(legend=False, ax=ax)
+df_subset.plot(legend=False, ax=ax, color="r")
+plt.show()
+
+
+
+
+"""def moving_zscore(df, window_size):
+    df_norm = df.copy()
+    for col in df_norm.columns:
+        df_norm[col] = (df_norm[col] - df_norm[col].rolling(window=window_size,min_periods=1).mean()) / (df_norm[col].rolling(window=window_size,min_periods=1).std())
+    df_norm = df_norm.dropna() 
+    return df_norm
+
+def zscore(df, df_train):
+    training_mean = df_train.mean()
+    training_std = df_train.std()
+
+    df_norm = (df - training_mean) / training_std
+    df_norm = df_norm.dropna() 
+    return df_norm 
+
+def segmentation(df, window_size):
+    segments = []
+    num_segments = len(df) - window_size + 1
+    for i in range(num_segments):
+        segment = df.iloc[i:i+window_size, :]
+        segments.append(segment)
+    return segments
+
+def get_index(df,col_name_list):
+    index_list=[]
+    for name in col_name_list:
+        index = df.columns.get_loc(name)
+        index_list.append(index)
+    return index_list
+
+window_size = 8640
+window_seg = 288
+sensor_list1=['n1','n4','n31']
+sensor_list7=['n188','n163','n613']
+sensor_list4=['n296', 'n740', 'n722', 'n679' ]
+sensor_list=sensor_list4
 df = pd.read_csv('InterdisciplinaryProject/Data/2019_SCADA_Pressures.csv', sep=';')
 indexes= get_index(df, sensor_list)
 for column in df.columns[1:]:
@@ -55,10 +171,12 @@ df_test = df.iloc[61058:104834, :]'''
 df_train = df.iloc[:4033, indexes]
 df_test = df.iloc[4034:, indexes]
 #Timeseries data (train) without anomalies
+
 fig, ax = plt.subplots()
 df_train[sensor_list].plot(legend=False, ax=ax)
 plt.show()
 #Timeseries data (test) with anomalies
+
 fig, ax = plt.subplots()
 df_test[sensor_list].plot(legend=False, ax=ax)
 plt.show()
@@ -68,6 +186,7 @@ plt.show()
 #df_train_value=moving_zscore(df_train,window_size)
 df_train_value=zscore(df_train,df_train)
 print("Number of training samples:", len(df_train_value))
+
 fig, ax = plt.subplots()
 df_train_value[sensor_list].plot(legend=False, ax=ax)
 plt.show()
@@ -122,30 +241,41 @@ model.summary()
 history = model.fit(
     x_train,
     x_train,
-    epochs=20,
+    epochs=50,
     batch_size=144,
     validation_split=0.2,
     callbacks=[
         keras.callbacks.EarlyStopping(monitor="val_loss")
     ],
 )
+
 plt.plot(history.history["loss"], label="Training Loss")
 plt.plot(history.history["val_loss"], label="Validation Loss")
 plt.legend()
 plt.show()
 
 x_train_pred = model.predict(x_train)
-'''
-indexes=get_index(df_train,sensor_list)'''
+
+
+#sensor list in tutto codice
 train_mae_loss = np.mean(np.abs(x_train_pred - x_train), axis=1)
+
+#partial sensor list
+#indexes=get_index(df_train,sensor_list1)
+#train_mae_loss = np.mean(np.abs(x_train_pred[:,indexes] - x_train[:,indexes]), axis=1)
+
 
 plt.hist(train_mae_loss, bins=50)
 plt.xlabel("Train MAE loss")
 plt.ylabel("No of samples")
 plt.show()
 
-threshold = np.max(train_mae_loss)
+#threshold = np.max(train_mae_loss)
+# For example, setting threshold at 95th percentile
+#threshold = np.percentile(train_mae_loss, 90)
+threshold = np.mean(train_mae_loss) + 7 * np.std(train_mae_loss)
 print("Reconstruction error threshold: ", threshold)
+#threshold=0.12
 
 
 plt.plot(x_train[0])
@@ -164,6 +294,7 @@ plt.show()
 
 #df_test=df_test.drop('Timestamp', axis=1)
 #df_test_value = moving_zscore(df_test,window_size)
+
 df_test_value= zscore(df_test,df_train)
 fig, ax = plt.subplots()
 df_test_value.plot(legend=False, ax=ax)
@@ -174,11 +305,17 @@ x_test = np.array(x_test)
 # Get test MAE loss.
 x_test_pred = model.predict(x_test)
 
+#sensor list fissa
 test_mae_loss = np.mean(np.abs(x_test_pred - x_test), axis=1)
+
+#sensor list parziale
+#test_mae_loss = np.mean(np.abs(x_test_pred[:,indexes] - x_test[:,indexes]), axis=1)
+
 print(type(test_mae_loss))
 print(test_mae_loss.shape)
 
 #test_mae_loss = test_mae_loss.reshape((-1))
+
 print(test_mae_loss.shape )
 plt.hist(test_mae_loss, bins=50)
 plt.xlabel("test MAE loss")
@@ -241,3 +378,4 @@ df_test[sensor_list].plot(legend=False, ax=ax)
 df_subset.plot(legend=False, ax=ax, color="r")
 plt.show()
 '''
+"""
