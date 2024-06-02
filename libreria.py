@@ -103,7 +103,7 @@ class utility():
         df = pd.DataFrame(combined_data_list)
         df = df.sort_values(by='timestamp').reset_index(drop=True)
         return df
-
+    '''
     def get_flow_range(self,initial_date, duration_days, sensor_ids):
         starting_date = datetime.strptime(initial_date,"%d/%m/%Y")
         end_date= starting_date+ timedelta(days=duration_days)
@@ -132,7 +132,39 @@ class utility():
             }
             sensors_info.append(sensor_dict)
         return sensors_info   
-    
+    '''
+
+    def get_flow_range(self, initial_date, duration_days):
+        starting_date = initial_date.to_pydatetime()
+        end_date = starting_date - timedelta(days=duration_days)
+        starting_time_unix = datetime.timestamp(starting_date)
+        end_time_unix = datetime.timestamp(end_date)
+        query = {
+            "$and": [
+                {"bt": {"$gte": end_time_unix}},
+                {"bt": {"$lt": starting_time_unix}}
+            ]
+        }
+        
+        # Eseguire la query sul database
+        result = self.flow_collection.find(query, {"bt": 1, "v": 1, "bn": 1})
+        data = []
+        for document in result:
+            sensor_id = document.get("bn")
+            timestamp = document.get("bt")
+            value = document.get("v")
+            data.append([timestamp, sensor_id, value])
+        
+        # Creare un DataFrame
+        df = pd.DataFrame(data, columns=["timestamp", "sensor_id", "value"])
+        
+        # Pivotare il DataFrame per avere una colonna per ogni sensore
+        df_pivot = df.pivot_table(index="timestamp", columns="sensor_id", values="value").reset_index()
+        
+        # Restituire il DataFrame pivotato
+        return df_pivot
+
+
     def get_all_flow(self):
         combined_data = defaultdict(dict)
         result = self.flow_collection.find({}, {"bt": 1, "v": 1, "bn": 1})
@@ -198,6 +230,39 @@ class utility():
 
             sensors_info.append(sensor_dict)
         return sensors_info   
+
+    def get_pressure_range(self, initial_date, duration_days):
+        starting_date = initial_date.to_pydatetime()
+        end_date = starting_date - timedelta(days=duration_days)
+        starting_time_unix = datetime.timestamp(starting_date)
+        end_time_unix = datetime.timestamp(end_date)
+        query = {
+            "$and": [
+                {"bt": {"$gte": end_time_unix}},
+                {"bt": {"$lt": starting_time_unix}}
+            ]
+        }
+        
+        # Eseguire la query sul database
+        result = self.pressure_collection.find(query, {"bt": 1, "v": 1, "bn": 1})
+        data = []
+        for document in result:
+            sensor_id = document.get("bn")
+            timestamp = document.get("bt")
+            value = document.get("v")
+            data.append([timestamp, sensor_id, value])
+        
+        # Creare un DataFrame
+        df = pd.DataFrame(data, columns=["timestamp", "sensor_id", "value"])
+        
+        # Pivotare il DataFrame per avere una colonna per ogni sensore
+        df_pivot = df.pivot_table(index="timestamp", columns="sensor_id", values="value").reset_index()
+        
+        # Restituire il DataFrame pivotato
+        return df_pivot
+
+        
+
     
     
     def get_all_pressure(self):
@@ -220,6 +285,7 @@ class utility():
 if __name__ == "__main__":
     a=utility()
     # #---------------------FLOW DATA --------------------------------------------
-    # sensor_ids= ['arduino_00', 'arduino_01']
-    #flowdata=a.get_all_flow()
+    sensor_ids= ['arduino_00', 'arduino_01']
+    flowdata=a.get_pressure_range("17/04/2024",14)
+    print(flowdata)
     
