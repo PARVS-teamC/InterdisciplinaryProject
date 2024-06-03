@@ -11,15 +11,20 @@ import tensorflow as tf
 import random
 
 class AnomalyDetector:
-    def __init__(self, window_size=8640, window_seg=288):
-        self.window_size = window_size
-        self.window_seg = window_seg
+    def __init__(self, path):
+        self.window_seg = 288  
+        self.path= path
+        
+    def get_metrics(self,df):
+        sorted_columns = sorted(df.columns)
+        df = df[sorted_columns]
+        column_means = df.mean()
+        self.mean_list = column_means.tolist()
+        column_std = df.std()
+        self.std_list = column_std.tolist()
 
-    def zscore(self,df, df_train):
-        training_mean = df_train.mean()
-        training_std = df_train.std()
-
-        df_norm = (df - training_mean) / training_std
+    def zscore(self,df,std,avg):
+        df_norm = (df - avg) / std
         df_norm = df_norm.dropna() 
         return df_norm 
 
@@ -36,12 +41,7 @@ class AnomalyDetector:
         for name in col_name_list:
             index = df.columns.get_loc(name)
             index_list.append(index)
-        return index_list
-    
-    def split_data(self,df):
-        self.df_train = df.iloc[:4033,] #two weeks of data
-        self.df_test = df.iloc[4033:,]
-    
+        return index_list  
     
     def check_daily_condition(self,day):
         num_columns = len(day.columns)
@@ -57,16 +57,20 @@ class AnomalyDetector:
         return True
     
     def preprocess_data(self,df):
+        self.get_metrics(df)
         df_value = df.copy()
-        for column in df.columns:
-            df_value[column] = self.zscore(df[column],self.df_train[column])
+        column_list=sorted(df.columns)
+        i=0
+        for column in column_list:
+            df_value[column] = self.zscore(df[column],self.std_list[i],self.mean_list[i])
+            i+=1
         #Apply segmentation 
         x=self.segmentation(df_value)
         x=np.array(x)
         return x
     
-    def build_model(self):
-        self.x_train=self.preprocess_data(self.df_train)
+    def build_model(self,df_train): #Dove prendiamo i dati di train?
+        self.x_train=self.preprocess_data(df_train)
         #Define the neural network
         model = keras.Sequential(
             [
@@ -125,10 +129,12 @@ class AnomalyDetector:
         )
         return model
     
-    def train_(self):
+    def train_(self,df_train):
         #Predict on training and evaluate maximum average error
-        self.model=self.build_model()
+        self.model=self.build_model(df_train)
+        self.model.save(self.path) 
         self.x_train_pred = self.model.predict(self.x_train)
+        
 
     def get_threshold(self):   
         train_mae_loss = np.mean(np.abs(self.x_train_pred - self.x_train), axis=1)
@@ -136,23 +142,23 @@ class AnomalyDetector:
         threshold=max_train_mae
         return threshold
     
-    def test_(self):
-        self.x_test=self.preprocess_data(self.df_test)
+    def test_(self,df_test):
+        self.x_test=self.preprocess_data(df_test)
+        self.model=keras.models.load_model(self.path)
         self.x_test_pred = self.model.predict(self.x_test)
     
-    def detect_anomalies(self):
+    def detect_anomalies(self,df_test):
         test_mae_loss = np.mean(np.abs(self.x_test_pred - self.x_test), axis=1)
         anomalies = test_mae_loss > self.get_threshold()
-        anomalies_tot= np.any(anomalies, axis=1)
 
         anomaly_indices_per_column = {}
         for column in range(len(anomalies[0])):
             anomaly_indices_per_column[column] = []
-            for data_idx in range(self.window_seg - 1, len(self.df_test) - self.window_seg + 1):
+            for data_idx in range(self.window_seg - 1, len(df_test) - self.window_seg + 1):
                 if anomalies[data_idx, column]:
                     anomaly_indices_per_column[column].append(data_idx)
 
-        anomalies_df = pd.DataFrame(anomalies, columns=self.df_test.columns)
+        anomalies_df = pd.DataFrame(anomalies, columns=df_test.columns)
         return anomalies_df
     
     def check_leakage(self,anomalies_df,current_situation,count_anomaly,count_normal):
@@ -206,7 +212,8 @@ class AnomalyDetector:
         correlation_change_score = correlation_diff.sum(axis=1)
         culprit_sensor = correlation_change_score.idxmax()
         return culprit_sensor
-
+    
+    
 
 
 
